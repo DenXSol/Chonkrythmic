@@ -97,6 +97,11 @@ canvas{display:block;width:100%;height:100%;}
 #vol-slider{flex:1;-webkit-appearance:none;appearance:none;height:4px;border-radius:2px;background:#2a0606;outline:none;cursor:pointer;}
 #vol-slider::-webkit-slider-thumb{-webkit-appearance:none;width:13px;height:13px;border-radius:50%;background:#F5E6A3;border:2px solid #1a0505;cursor:pointer;}
 #vol-slider::-moz-range-thumb{width:13px;height:13px;border-radius:50%;background:#F5E6A3;border:2px solid #1a0505;cursor:pointer;}
+#ca-row{display:flex;align-items:center;gap:6px;}
+#ca-text{font-size:9px;line-height:1.35;word-break:break-all;color:#F5E6A3;opacity:.92;flex:1;}
+#ca-copy{width:auto;padding:6px 9px;font-size:10px;flex-shrink:0;}
+#chart-wrap{padding:0 10px 10px;}
+#chart-frame{width:100%;height:180px;border:1.5px solid #6a1515;border-radius:10px;background:#2a0606;}
 /* Birdeye badge */
 #birdeye-badge{position:fixed;bottom:12px;left:12px;z-index:500;display:flex;align-items:center;gap:6px;background:#3D0A0Aee;border:1.5px solid #F5E6A330;border-radius:20px;padding:5px 10px;text-decoration:none;opacity:.7;transition:opacity .2s;}
 #birdeye-badge:hover{opacity:1;}
@@ -167,8 +172,8 @@ canvas{display:block;width:100%;height:100%;}
       <div style="display:flex;flex-direction:column;gap:5px;margin-top:8px;">
         <div class="srow"><button class="cbtn dim" onclick="restartChart()">RESTART</button><span class="iico" data-tip="Stops all balls. Next live trade triggers a fresh start from 10x base speed.">ⓘ</span></div>
         <div class="srow"><button class="cbtn dim" id="tx20-btn" onclick="handleHistoryClick(20)">LAST 20 TX</button><span class="iico" data-tip="Silently warms up ball speeds from recent trade history. Live feed stays clean.">ⓘ</span></div>
-        <div class="srow"><button class="cbtn dim" id="tx50-btn" onclick="handleHistoryClick(50)">LAST 50 TX</button><span class="iico" data-tip="Silently warms up ball speeds from recent trade history. Live feed stays clean.">ⓘ</span></div>
-        <div class="srow"><button class="cbtn dim active" id="tx100-btn" onclick="handleHistoryClick(100)">LAST 100 TX</button><span class="iico" data-tip="Default on load. Warms up all balls from last 100 trades so chart starts alive.">ⓘ</span></div>
+        <div class="srow"><button class="cbtn dim active" id="tx50-btn" onclick="handleHistoryClick(50)">LAST 50 TX</button><span class="iico" data-tip="Default on load. Warms up all balls from the last 50 trades so chart starts alive.">ⓘ</span></div>
+        <div class="srow"><button class="cbtn dim" id="tx100-btn" onclick="handleHistoryClick(100)">LAST 100 TX</button><span class="iico" data-tip="Warms up all balls from recent trade history. Live feed stays clean.">ⓘ</span></div>
       </div>
     </div>
     <div class="pdiv" style="margin-top:10px;"></div>
@@ -201,9 +206,15 @@ canvas{display:block;width:100%;height:100%;}
         <div class="scard"><div class="slbl">VOLUME 24H</div><div class="sval" id="s-vol">–</div></div>
         <div class="scard"><div class="slbl">LIQUIDITY</div><div class="sval" id="s-liq">–</div></div>
         <div class="scard"><div class="slbl">FDV / MKT CAP</div><div class="sval" id="s-fdv">–</div></div>
+        <div class="scard"><div class="slbl">CA</div><div id="ca-row"><div id="ca-text">–</div><button class="cbtn" id="ca-copy" onclick="copyCA()">COPY</button></div></div>
       </div>
     </div>
     <div class="pdiv" style="margin-top:10px;"></div>
+    <div id="chart-wrap">
+      <div class="feed-ttl">CHART</div>
+      <iframe id="chart-frame" src="" frameborder="0" allowfullscreen></iframe>
+    </div>
+    <div class="pdiv" style="margin-top:0;"></div>
     <div id="feed-wrap">
       <div class="feed-ttl">LIVE TRADES</div>
       <div id="feed"></div>
@@ -220,7 +231,6 @@ canvas{display:block;width:100%;height:100%;}
 
 <script>
 // ─── CONFIG ──────────────────────────────────────────────────────────────────
-const BIRDEYE_API_KEY = 'f721900ae97a4d30b24a9427bcd788b7';
 const BIRDEYE_BASE = 'https://public-api.birdeye.so';
 const SOL_MINT = 'So11111111111111111111111111111111111111112';
 
@@ -238,7 +248,7 @@ let processedTradeIds = new Set();
 let livePollTimer = null;
 let buttonCooldowns = { 20: 0, 50: 0, 100: 0 };
 let buttonCooldownTimer = null;
-let selectedWarmLimit = 100;
+let selectedWarmLimit = 50;
 
 const LIVE_POLL_MS = 5000;       // poll every 5s for real-time feel
 const HISTORY_COOLDOWN_MS = 30000;
@@ -430,49 +440,36 @@ function addFeed(type, text) { const el=document.createElement('div'); el.classN
 function restartChart() { initTierState(); processedTradeIds=new Set(); feedEl.innerHTML=''; }
 
 // ─── BIRDEYE TRADE API ────────────────────────────────────────────────────────
-// GET /defi/txs/token — real individual swaps, deduplicated by txHash
+// Frontend now talks to /api/trades so the Birdeye key stays server-side.
 async function fetchBirdeyeTrades(limit = 50) {
-  const url = `${BIRDEYE_BASE}/defi/txs/token?address=${currentToken.mint}&offset=0&limit=${limit}&tx_type=swap&sort_type=desc`;
-  const res = await fetch(url, {
-    headers: {
-      'X-API-KEY': BIRDEYE_API_KEY,
-      'x-chain': 'solana',
-    },
+  const clampedLimit = Math.max(1, Math.min(limit, 50));
+  const res = await fetch(`/api/trades?address=${encodeURIComponent(currentToken.mint)}&limit=${clampedLimit}`, {
     cache: 'no-store',
   });
-  if (!res.ok) throw new Error(`Birdeye ${res.status}`);
+  if (!res.ok) throw new Error(`Trades API ${res.status}`);
   const json = await res.json();
-  // Response: { data: { items: [...] } }
   const items = json?.data?.items || json?.data || json?.items || [];
   return items.map(normalizeBirdeyeTrade).filter(Boolean).reverse(); // oldest first
 }
 
 function normalizeBirdeyeTrade(item) {
-  // Birdeye trade object keys: txHash, blockUnixTime, side, from{symbol,address,amount,uiAmount}, to{symbol,address,amount,uiAmount}, volumeUSD
   const id = item.txHash || item.signature || item.tx_hash;
   if (!id) return null;
 
-  // side: Birdeye returns "buy" or "sell" directly — no inference needed
   let side = item.side;
   if (!side) {
-    // fallback inference: if 'to' token matches our mint → buy
-    const toAddr  = item.to?.address  || item.toToken?.address  || '';
+    const toAddr = item.to?.address || item.toToken?.address || '';
     const fromAddr = item.from?.address || item.fromToken?.address || '';
-    if (toAddr  === currentToken.mint) side = 'buy';
+    if (toAddr === currentToken.mint) side = 'buy';
     else if (fromAddr === currentToken.mint) side = 'sell';
     else return null;
   }
-  side = side.toLowerCase();
+
+  side = String(side).toLowerCase();
   if (side !== 'buy' && side !== 'sell') return null;
 
-  // USD value — prefer volumeUSD, fallback to amount fields
-  let usd = Number(item.volumeUSD || item.volume_usd || item.usd_value || 0);
-  if (!usd || usd <= 0) {
-    // try SOL side amount × sol price (rough fallback)
-    const solAmt = Number(item.from?.uiAmount || item.to?.uiAmount || 0);
-    usd = solAmt * 150; // rough SOL price fallback
-  }
-  usd = Math.max(1, usd);
+  let usd = Number(item.volumeUSD || item.volumeUsd || item.volume_usd || item.usd_value || 0);
+  if (!usd || usd <= 0) usd = 1;
 
   const ts = item.blockUnixTime || item.block_time || Date.now() / 1000;
   return { id, side, usd, ts };
@@ -501,7 +498,7 @@ function startButtonCooldown(count) { buttonCooldowns[count]=Date.now()+HISTORY_
 async function bootstrapFromHistory(limit = 50) {
   // Birdeye free tier max is 50 per call; clamp
   const clampedLimit = Math.min(limit, 50);
-  selectedWarmLimit = limit;
+  selectedWarmLimit = Math.min(limit, 50);
   setHistoryButtonActive(limit);
   initTierState(); feedEl.innerHTML = '';
   document.getElementById('poll-time').textContent = 'LOADING HISTORY...';
@@ -555,6 +552,7 @@ async function pollBirdeyeLive() {
 
 function startLivePolling() {
   if (livePollTimer) clearInterval(livePollTimer);
+  pollBirdeyeLive();
   livePollTimer = setInterval(() => {
     if (!document.hidden || playInBackground) pollBirdeyeLive();
   }, LIVE_POLL_MS);
@@ -598,11 +596,30 @@ function switchToken(key) {
   document.getElementById('nav-buy').href = tok.buy;
   document.getElementById('nav-buy').textContent = 'BUY ' + tok.name;
   ['s-price','s-change','s-sol','s-vol','s-liq','s-fdv'].forEach(id => document.getElementById(id).textContent = '–');
+  document.getElementById('ca-text').textContent = tok.mint;
   document.getElementById('s-change').className = 'ssub';
   feedEl.innerHTML = ''; setLive('');
+  updateChart(tok);
   initJupiter(tok); pollJupPrice(); pollDex();
-  bootstrapFromHistory(50);
+  bootstrapFromHistory(selectedWarmLimit);
   startLivePolling();
+}
+
+// ─── CA + CHART ──────────────────────────────────────────────────────────────
+function updateChart(tok) {
+  tok = tok || currentToken;
+  const src = `https://embed.birdeye.so/tv-widget/${tok.mint}?chain=solana&viewMode=pair&chartInterval=15&chartType=Candle&chartTimezone=America%2FNew_York&chartLeftToolbar=show&theme=dark`;
+  document.getElementById('chart-frame').src = src;
+}
+
+async function copyCA() {
+  try {
+    await navigator.clipboard.writeText(currentToken.mint);
+    const btn = document.getElementById('ca-copy');
+    const prev = btn.textContent;
+    btn.textContent = 'COPIED';
+    setTimeout(() => btn.textContent = prev, 1200);
+  } catch (e) {}
 }
 
 // ─── JUPITER WIDGET ───────────────────────────────────────────────────────────
@@ -613,7 +630,7 @@ function initJupiter(tok) {
     window.Jupiter.init({
       displayMode: 'widget',
       widgetStyle: { position: 'bottom-right', size: 'default' },
-      formProps: { initialInputMint: SOL_MINT, initialOutputMint: tok.mint },
+      formProps: { initialInputMint: SOL_MINT, initialOutputMint: tok.mint, fixedOutputMint: true },
     });
   } catch(e) { setTimeout(() => initJupiter(tok), 500); }
 }
@@ -624,6 +641,8 @@ document.addEventListener('click', e => { if (!document.getElementById('chonk-dr
 
 // ─── INIT ─────────────────────────────────────────────────────────────────────
 resize(); buildTierPanel(); initTierState(); startButtonCooldownTicker();
+document.getElementById('ca-text').textContent = currentToken.mint;
+updateChart(currentToken);
 requestAnimationFrame(t => { lastTime=t; requestAnimationFrame(loop); });
 window.addEventListener('resize', resize);
 
@@ -636,7 +655,7 @@ document.addEventListener('visibilitychange', () => {
 });
 
 setTimeout(async () => {
-  await bootstrapFromHistory(50);
+  await bootstrapFromHistory(selectedWarmLimit);
   startLivePolling();
   pollJupPrice();
   pollDex();
