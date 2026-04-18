@@ -119,7 +119,7 @@ canvas{display:block;width:100%;height:100%;position:relative;z-index:2;}
 <nav id="nav">
   <div id="nav-left">
     <a href="https://chonky.com/" target="_blank">
-      <img id="nav-logo" src="https://raw.githubusercontent.com/DenXSol/chonky-site/main/chonkylogo2.png" onerror="this.style.display='none';document.getElementById('nav-logo-txt').style.display='block'" alt="CHONKY">
+      <img id="nav-logo" src="https://raw.githubusercontent.com/DenXSol/Chonkrythmic/main/WordLogo.png" onerror="this.style.display='none';document.getElementById('nav-logo-txt').style.display='block'" alt="CHONKY">
       <span id="nav-logo-txt">CHONKY</span>
     </a>
     <div id="live-pill"><div id="live-dot"></div><span id="live-txt">LIVE</span></div>
@@ -263,7 +263,6 @@ let liveErrorBackoffUntil = 0;
 let latestSeenTradeTs = 0;
 let latestSeenTradeId = '';
 const tokenHistoryCache = {};
-let lazyPreloadScheduled = false;
 
 const LIVE_POLL_MS = 20000;      // poll every 20s to reduce rate limits
 const HISTORY_COOLDOWN_MS = 30000;
@@ -734,36 +733,6 @@ async function copyCA() {
   } catch (e) {}
 }
 
-// ─── LAZY PRELOAD OTHER TOKENS ────────────────────────────────────────────────
-async function startLazyPreloadOtherTokens() {
-  if (lazyPreloadScheduled) return;
-  lazyPreloadScheduled = true;
-
-  const others = Object.values(TOKENS).filter(t => t.mint !== currentToken.mint);
-  for (const tok of others) {
-    if (tokenHistoryCache[tok.mint]?.length) continue;
-
-    while (isFetchingTrades || Date.now() < liveErrorBackoffUntil) {
-      await new Promise(r => setTimeout(r, 1200));
-    }
-
-    try {
-      const res = await fetch(`/api/trades?address=${encodeURIComponent(tok.mint)}&limit=50`, { cache: 'no-store' });
-      if (res.ok) {
-        const json = await res.json();
-        const items = json?.data?.items || json?.data || json?.items || [];
-        const prevToken = currentToken;
-        currentToken = tok;
-        const normalized = items.map(normalizeBirdeyeTrade).filter(Boolean).reverse();
-        currentToken = prevToken;
-        if (normalized.length) tokenHistoryCache[tok.mint] = normalized;
-      }
-    } catch (e) {}
-
-    await new Promise(r => setTimeout(r, 2500));
-  }
-}
-
 // ─── JUPITER WIDGET ───────────────────────────────────────────────────────────
 function initJupiter(tok) {
   tok = tok || currentToken;
@@ -799,7 +768,6 @@ document.addEventListener('visibilitychange', () => {
 setTimeout(async () => {
   await bootstrapFromHistory(50);
   startLivePolling();
-  startLazyPreloadOtherTokens();
   pollJupPrice();
   pollDex();
   setInterval(pollJupPrice, 5000);
