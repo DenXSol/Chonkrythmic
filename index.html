@@ -28,7 +28,7 @@ html,body{width:100%;height:100%;overflow:hidden;background:#C8281E;font-family:
 #app{position:fixed;top:50px;left:0;right:0;bottom:0;display:flex;}
 #left{width:175px;flex-shrink:0;background:#3D0A0A;border-right:2px solid #2a0606;display:flex;flex-direction:column;overflow:hidden;}
 #canvas-wrap{flex:1;position:relative;overflow:hidden;}
-#bg-chart-frame{position:absolute;inset:0;width:100%;height:100%;border:0;opacity:.18;pointer-events:none;filter:saturate(.9) contrast(.95);}
+#bg-chart-frame{position:absolute;top:-2%;left:-2%;width:104%;height:104%;border:0;opacity:.28;pointer-events:none;filter:saturate(.75) contrast(.9) brightness(.9);}
 canvas{display:block;width:100%;height:100%;position:relative;z-index:2;}
 #right{width:200px;flex-shrink:0;background:#3D0A0A;border-left:2px solid #2a0606;display:flex;flex-direction:column;overflow-y:auto;overflow-x:hidden;}
 #right::-webkit-scrollbar{width:3px;}
@@ -82,9 +82,9 @@ canvas{display:block;width:100%;height:100%;position:relative;z-index:2;}
 .ssub{font-size:10px;color:#F5E6A360;margin-top:1px;}
 .ssub.green{color:#4ade80;}
 .ssub.red{color:#f87171;}
-#feed-wrap{padding:0 10px 10px;margin-top:auto;}
+#feed-wrap{padding:0 10px 10px;margin-top:10px;}
 .feed-ttl{font-size:8px;letter-spacing:2px;color:#F5E6A340;padding-top:8px;margin-bottom:5px;}
-#feed{display:flex;flex-direction:column;gap:2px;height:140px;overflow-y:auto;}
+#feed{display:flex;flex-direction:column;gap:2px;height:220px;overflow-y:auto;}
 #feed::-webkit-scrollbar{width:3px;}
 #feed::-webkit-scrollbar-track{background:#2a0606;}
 #feed::-webkit-scrollbar-thumb{background:#6a1515;border-radius:2px;}
@@ -245,6 +245,8 @@ let buttonCooldownTimer = null;
 let selectedWarmLimit = 50;
 let isFetchingTrades = false;
 let liveErrorBackoffUntil = 0;
+let latestSeenTradeTs = 0;
+let latestSeenTradeId = '';
 
 const LIVE_POLL_MS = 20000;      // poll every 20s to reduce rate limits
 const HISTORY_COOLDOWN_MS = 30000;
@@ -401,13 +403,13 @@ function playNote(slot, side) {
 let lastTime = 0;
 function loop(ts) {
   const dt = Math.min((ts - lastTime) / 1000, .05); lastTime = ts;
-  ctx.fillStyle = '#C8281E'; ctx.fillRect(0, 0, W, H);
+  ctx.fillStyle = 'rgba(200,40,30,0.90)'; ctx.fillRect(0, 0, W, H);
   const grd = ctx.createRadialGradient(px,py,0,px,py,H*.65);
-  grd.addColorStop(0,'rgba(60,0,0,0.5)'); grd.addColorStop(1,'rgba(0,0,0,0)');
+  grd.addColorStop(0,'rgba(60,0,0,0.35)'); grd.addColorStop(1,'rgba(0,0,0,0)');
   ctx.fillStyle = grd; ctx.fillRect(0, 0, W, H);
   const wl = Math.max(W,H) * 1.2;
-  ctx.beginPath(); ctx.moveTo(px,py); ctx.lineTo(px+Math.sin(-wa)*wl, py-Math.cos(wa)*wl); ctx.strokeStyle='rgba(245,230,163,0.26)'; ctx.lineWidth=3.5; ctx.stroke();
-  ctx.beginPath(); ctx.moveTo(px,py); ctx.lineTo(px+Math.sin(wa)*wl,  py-Math.cos(wa)*wl); ctx.strokeStyle='rgba(245,230,163,0.26)'; ctx.lineWidth=3.5; ctx.stroke();
+  ctx.beginPath(); ctx.moveTo(px,py); ctx.lineTo(px+Math.sin(-wa)*wl, py-Math.cos(wa)*wl); ctx.strokeStyle='rgba(245,230,163,0.34)'; ctx.lineWidth=7.5; ctx.stroke();
+  ctx.beginPath(); ctx.moveTo(px,py); ctx.lineTo(px+Math.sin(wa)*wl,  py-Math.cos(wa)*wl); ctx.strokeStyle='rgba(245,230,163,0.34)'; ctx.lineWidth=7.5; ctx.stroke();
   for (let ti = 0; ti < 16; ti++) {
     const ts2=TS[ti], sl=t2s(ti), al=armLen(sl), om=omega(sl), amp=wa*.90, bs=bspd(sl), r=brad(sl), col=SLOT_COLORS[sl];
     ts2.speed += (ts2.targetSpeed - ts2.speed) * .05;
@@ -433,11 +435,11 @@ function activateBall(ti) { const ts2=TS[ti]; if (!ts2.active) { ts2.angle=0; ts
 function fireBuy(usd, lbl)  { const ti=getTierIdx(usd); activateBall(ti); TS[ti].active=true; TS[ti].activeFade=1; TS[ti].targetSpeed=Math.min(MAX_SPD, TS[ti].targetSpeed+0.20); addFeed('buy','▲ '+lbl+'  '+TIERS[ti].label); }
 function fireSell(usd, lbl) { const ti=getTierIdx(usd); activateBall(ti); TS[ti].targetSpeed=Math.max(MIN_SPD, TS[ti].targetSpeed-0.10); addFeed('sell','▼ '+lbl+'  '+TIERS[ti].label); }
 function addFeed(type, text) { const el=document.createElement('div'); el.className='tx '+type; el.textContent=text; feedEl.insertBefore(el,feedEl.firstChild); while(feedEl.children.length>100)feedEl.removeChild(feedEl.lastChild); }
-function restartChart() { initTierState(); processedTradeIds=new Set(); feedEl.innerHTML=''; }
+function restartChart() { initTierState(); processedTradeIds=new Set(); feedEl.innerHTML=''; latestSeenTradeTs = 0; latestSeenTradeId = ''; }
 
 // ─── BIRDEYE TRADE API ────────────────────────────────────────────────────────
 // Frontend now talks to /api/trades so the Birdeye key stays server-side.
-async function fetchBirdeyeTrades(limit = 25) {
+async function fetchBirdeyeTrades(limit = 10) {
   const now = Date.now();
   if (isFetchingTrades) return null;
   if (now < liveErrorBackoffUntil) return null;
@@ -487,17 +489,12 @@ function normalizeBirdeyeTrade(item) {
 
   let usd = 0;
   if (baseUi > 0 && basePrice > 0) usd = baseUi * basePrice;
-  if (!usd || usd <= 0) usd = quoteUi * quotePrice;
-  if (!usd || usd <= 0) {
-    const fromUi = Math.abs(Number(item.from?.uiAmount || 0));
-    const fromPrice = Math.abs(Number(item.from?.price || 0));
-    const toUi = Math.abs(Number(item.to?.uiAmount || 0));
-    const toPrice = Math.abs(Number(item.to?.price || 0));
-    usd = Math.max(fromUi * fromPrice, toUi * toPrice, 0);
-  }
-  usd = Math.max(0.01, usd);
+  if ((!usd || usd <= 0) && quoteUi > 0 && quotePrice > 0) usd = quoteUi * quotePrice;
+  if ((!usd || usd <= 0) && item.from?.uiAmount && item.from?.price) usd = Math.abs(Number(item.from.uiAmount) * Number(item.from.price));
+  if ((!usd || usd <= 0) && item.to?.uiAmount && item.to?.price) usd = Math.abs(Number(item.to.uiAmount) * Number(item.to.price));
+  if (!usd || usd <= 0) usd = 0.01;
 
-  const ts = item.blockUnixTime || item.block_time || Date.now() / 1000;
+  const ts = Number(item.blockUnixTime || item.block_time || Math.floor(Date.now() / 1000));
   return { id, side, usd, ts };
 }
 
@@ -531,14 +528,18 @@ async function bootstrapFromHistory(limit = 50) {
   try {
     const trades = await fetchBirdeyeTrades(clampedLimit);
     for (const trade of trades) {
-      if (trade.side === 'buy') fireBuy(trade.usd, '$' + Math.round(trade.usd));
-      else fireSell(trade.usd, '$' + Math.round(trade.usd));
+      if (trade.side === 'buy') fireBuy(trade.usd, '$' + (trade.usd >= 1 ? Math.round(trade.usd) : trade.usd.toFixed(2)));
+      else fireSell(trade.usd, '$' + (trade.usd >= 1 ? Math.round(trade.usd) : trade.usd.toFixed(2)));
     }
     // snap speeds instantly for history warm-up
     TS.forEach(ts => { ts.speed = ts.targetSpeed; });
     // seed seen IDs so live poll only fires NEW trades
     processedTradeIds = new Set(trades.map(t => t.id));
-    feedEl.innerHTML = ''; // clear history from feed — feed is live-only
+    if (trades.length) {
+      const newest = trades[trades.length - 1];
+      latestSeenTradeTs = newest.ts || 0;
+      latestSeenTradeId = newest.id || '';
+    }
     setLive('on');
     document.getElementById('poll-time').textContent = `BOOTSTRAPPED ${trades.length} TX · ${new Date().toLocaleTimeString()}`;
   } catch(e) {
@@ -557,22 +558,41 @@ async function handleHistoryClick(limit) {
 
 // ─── LIVE POLLING ─────────────────────────────────────────────────────────────
 async function pollBirdeyeLive() {
+  const pollTimeEl = document.getElementById('poll-time');
+
+  if (Date.now() < liveErrorBackoffUntil) {
+    setLive('err');
+    pollTimeEl.textContent = 'COOLING DOWN...';
+    return;
+  }
+
   try {
-    const trades = await fetchBirdeyeTrades(25);
+    const trades = await fetchBirdeyeTrades(10);
     if (!trades) return;
-    const fresh = trades.filter(t => !processedTradeIds.has(t.id));
+
+    const fresh = trades.filter(t => {
+      if (processedTradeIds.has(t.id)) return false;
+      if (t.ts > latestSeenTradeTs) return true;
+      if (t.ts === latestSeenTradeTs && t.id !== latestSeenTradeId) return true;
+      return false;
+    });
+
     if (fresh.length) {
       fresh.forEach(trade => {
         processedTradeIds.add(trade.id);
-        if (trade.side === 'buy') fireBuy(trade.usd, '$' + Math.round(trade.usd));
-        else fireSell(trade.usd, '$' + Math.round(trade.usd));
+        if (trade.side === 'buy') fireBuy(trade.usd, '$' + (trade.usd >= 1 ? Math.round(trade.usd) : trade.usd.toFixed(2)));
+        else fireSell(trade.usd, '$' + (trade.usd >= 1 ? Math.round(trade.usd) : trade.usd.toFixed(2)));
       });
+      const newest = fresh[fresh.length - 1];
+      latestSeenTradeTs = newest.ts || latestSeenTradeTs;
+      latestSeenTradeId = newest.id || latestSeenTradeId;
     }
+
     setLive('on');
-    document.getElementById('poll-time').textContent = `LIVE${fresh.length ? ' +'+fresh.length+' NEW · ' : ' · '}${new Date().toLocaleTimeString()}`;
+    pollTimeEl.textContent = `LIVE${fresh.length ? ' +' + fresh.length + ' NEW · ' : ' · '}${new Date().toLocaleTimeString()}`;
   } catch(e) {
     setLive('err');
-    document.getElementById('poll-time').textContent = 'BIRDEYE: RECONNECTING...';
+    pollTimeEl.textContent = Date.now() < liveErrorBackoffUntil ? 'COOLING DOWN...' : 'BIRDEYE: RECONNECTING...';
     console.error('Live poll error:', e);
   }
 }
@@ -637,8 +657,9 @@ function switchToken(key) {
 // ─── CA + CHART ──────────────────────────────────────────────────────────────
 function updateChart(tok) {
   tok = tok || currentToken;
-  const src = `https://embed.birdeye.so/tv-widget/${tok.mint}?chain=solana&viewMode=pair&chartInterval=15&chartType=Candle&chartTimezone=America%2FNew_York&chartLeftToolbar=hide&theme=dark`;
-  document.getElementById('bg-chart-frame').src = src;
+  const src = `https://embed.birdeye.so/tv-widget/${tok.mint}?chain=solana&viewMode=pair&chartInterval=15&chartType=Candle&chartTimezone=America%2FNew_York&chartLeftToolbar=hide&theme=dark&cache=${Date.now()}`;
+  const frame = document.getElementById('bg-chart-frame');
+  if (frame) frame.src = src;
 }
 
 async function copyCA() {
