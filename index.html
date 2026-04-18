@@ -91,6 +91,12 @@ canvas{display:block;width:100%;height:100%;}
 .tx.buy{background:#14532d;color:#86efac;border:1px solid #166634;}
 .tx.sell{background:#7f1d1d;color:#fca5a5;border:1px solid #991b1b;}
 #poll-time{font-size:7px;color:#F5E6A325;margin-top:3px;}
+/* Volume slider */
+#vol-wrap{display:flex;align-items:center;gap:7px;margin-bottom:8px;}
+#vol-icon{font-size:13px;cursor:pointer;flex-shrink:0;}
+#vol-slider{flex:1;-webkit-appearance:none;appearance:none;height:4px;border-radius:2px;background:#2a0606;outline:none;cursor:pointer;}
+#vol-slider::-webkit-slider-thumb{-webkit-appearance:none;width:13px;height:13px;border-radius:50%;background:#F5E6A3;border:2px solid #1a0505;cursor:pointer;}
+#vol-slider::-moz-range-thumb{width:13px;height:13px;border-radius:50%;background:#F5E6A3;border:2px solid #1a0505;cursor:pointer;}
 /* Birdeye badge */
 #birdeye-badge{position:fixed;bottom:12px;left:12px;z-index:500;display:flex;align-items:center;gap:6px;background:#3D0A0Aee;border:1.5px solid #F5E6A330;border-radius:20px;padding:5px 10px;text-decoration:none;opacity:.7;transition:opacity .2s;}
 #birdeye-badge:hover{opacity:1;}
@@ -124,12 +130,23 @@ canvas{display:block;width:100%;height:100%;}
   <div id="left">
     <div class="psec" style="margin-top:6px;">
       <div class="stitle">SOUND</div>
+      <div id="vol-wrap">
+        <span id="vol-icon" onclick="toggleMute()" title="Mute/Unmute">🔊</span>
+        <input id="vol-slider" type="range" min="0" max="100" value="80" oninput="setVolume(this.value)">
+      </div>
       <div id="sound-btns">
         <button class="cbtn dim" id="snd-0" onclick="setSound(0)">🎵 GUQIN</button>
         <button class="cbtn dim" id="snd-1" onclick="setSound(1)">🎻 ERHU</button>
         <button class="cbtn dim" id="snd-2" onclick="setSound(2)">🪈 DIZI</button>
         <button class="cbtn dim active" id="snd-3" onclick="setSound(3)">🎶 GUZHENG</button>
         <button class="cbtn dim" id="snd-4" onclick="setSound(4)">🌬️ XIAO</button>
+      </div>
+      <div class="tog-wrap" style="margin-top:8px;">
+        <div class="tog-row" onclick="doToggle('bg')">
+          <div class="tog-box" id="tog-bg"><div class="tog-knob"></div></div>
+          <span class="tog-lbl">PLAY IN BG</span>
+          <span class="iico" data-tip="Keep audio and live polling running when you switch tabs.">ⓘ</span>
+        </div>
       </div>
     </div>
     <div class="pdiv" style="margin-top:10px;"></div>
@@ -277,20 +294,59 @@ function doToggle(w) {
     document.getElementById('tog-price').classList.toggle('on', vzState.flipPrice);
     for (let i = 0; i < 16; i++) { const ts2=TS[i],ns=t2s(i),no=omega(ns),amp=wa*.90; ts2.time=Math.asin(Math.max(-amp*.89,Math.min(amp*.89,ts2.angle))/amp)/no; }
     buildTierPanel();
-  } else {
+  } else if (w === 'tone') {
     vzState.flipTone = !vzState.flipTone;
     document.getElementById('tog-tone').classList.toggle('on', vzState.flipTone);
+  } else if (w === 'bg') {
+    playInBackground = !playInBackground;
+    document.getElementById('tog-bg').classList.toggle('on', playInBackground);
+    // restart polling to pick up new visibility rule
+    startLivePolling();
   }
 }
 
 // ─── AUDIO ────────────────────────────────────────────────────────────────────
-let audioCtx = null;
-function getAudio() { if (!audioCtx) audioCtx = new (window.AudioContext||window.webkitAudioContext)(); return audioCtx; }
-function setSound(n) { soundMode=n; document.querySelectorAll('.cbtn.dim').forEach((b,i)=>b.classList.toggle('active',i===n)); }
+let audioCtx = null, masterGain = null;
+let volumeLevel = 0.8, isMuted = false, playInBackground = false;
+
+function getAudio() {
+  if (!audioCtx) {
+    audioCtx = new (window.AudioContext||window.webkitAudioContext)();
+    masterGain = audioCtx.createGain();
+    masterGain.gain.value = volumeLevel;
+    masterGain.connect(audioCtx.destination);
+  }
+  // Resume if suspended (browser autoplay policy)
+  if (audioCtx.state === 'suspended') audioCtx.resume();
+  return audioCtx;
+}
+
+// Resume AudioContext on first user interaction anywhere
+document.addEventListener('click', () => { if (audioCtx && audioCtx.state === 'suspended') audioCtx.resume(); }, { once: false });
+document.addEventListener('keydown', () => { if (audioCtx && audioCtx.state === 'suspended') audioCtx.resume(); }, { once: false });
+
+function setVolume(val) {
+  volumeLevel = val / 100;
+  isMuted = volumeLevel === 0;
+  if (masterGain) masterGain.gain.value = volumeLevel;
+  document.getElementById('vol-icon').textContent = isMuted ? '🔇' : volumeLevel < 0.4 ? '🔉' : '🔊';
+}
+
+function toggleMute() {
+  isMuted = !isMuted;
+  if (masterGain) masterGain.gain.value = isMuted ? 0 : volumeLevel;
+  document.getElementById('vol-icon').textContent = isMuted ? '🔇' : volumeLevel < 0.4 ? '🔉' : '🔊';
+  if (!isMuted) { const sl=document.getElementById('vol-slider'); if(Number(sl.value)===0){sl.value=50;setVolume(50);} }
+}
+
+function setSound(n) { soundMode=n; document.querySelectorAll('#sound-btns .cbtn.dim').forEach((b,i)=>b.classList.toggle('active',i===n)); }
 function playNote(slot, side) {
   try {
-    const ac=getAudio(), freq=s2f(slot), now=ac.currentTime;
-    const pan=ac.createStereoPanner(); pan.pan.value=side===-1?-.6:.6; pan.connect(ac.destination);
+    const ac=getAudio();
+    if (isMuted || volumeLevel === 0) return;
+    const freq=s2f(slot), now=ac.currentTime;
+    const pan=ac.createStereoPanner(); pan.pan.value=side===-1?-.6:.6;
+    pan.connect(masterGain); // route through master gain for volume control
     if (soundMode===0) {
       const t1=ac.createOscillator(),tg=ac.createGain();t1.connect(tg);tg.connect(pan);t1.type='sine';t1.frequency.value=freq*.5;
       tg.gain.setValueAtTime(0,now);tg.gain.linearRampToValueAtTime(.08,now+.004);tg.gain.exponentialRampToValueAtTime(.001,now+.12);t1.start(now);t1.stop(now+.15);
@@ -336,7 +392,7 @@ function playNote(slot, side) {
 }
 
 // ─── RENDER LOOP ──────────────────────────────────────────────────────────────
-let lastTime = 0;
+let lastTime = 0, loopRunning = false;
 function loop(ts) {
   const dt = Math.min((ts - lastTime) / 1000, .05); lastTime = ts;
   ctx.fillStyle = '#C8281E'; ctx.fillRect(0, 0, W, H);
@@ -499,7 +555,9 @@ async function pollBirdeyeLive() {
 
 function startLivePolling() {
   if (livePollTimer) clearInterval(livePollTimer);
-  livePollTimer = setInterval(() => { if (!document.hidden) pollBirdeyeLive(); }, LIVE_POLL_MS);
+  livePollTimer = setInterval(() => {
+    if (!document.hidden || playInBackground) pollBirdeyeLive();
+  }, LIVE_POLL_MS);
 }
 
 // ─── PRICE + DEX STATS ────────────────────────────────────────────────────────
@@ -568,7 +626,14 @@ document.addEventListener('click', e => { if (!document.getElementById('chonk-dr
 resize(); buildTierPanel(); initTierState(); startButtonCooldownTicker();
 requestAnimationFrame(t => { lastTime=t; requestAnimationFrame(loop); });
 window.addEventListener('resize', resize);
-document.addEventListener('visibilitychange', () => { if (!document.hidden) pollBirdeyeLive(); });
+
+// When returning to tab, always catch up on trades and resume audio
+document.addEventListener('visibilitychange', () => {
+  if (!document.hidden) {
+    if (audioCtx && audioCtx.state === 'suspended') audioCtx.resume();
+    pollBirdeyeLive();
+  }
+});
 
 setTimeout(async () => {
   await bootstrapFromHistory(50);
