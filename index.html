@@ -16,6 +16,7 @@ html,body{width:100%;height:100%;overflow:hidden;background:#C8281E;font-family:
 #live-pill{display:flex;align-items:center;gap:5px;background:#2a0606;border:1.5px solid #5a1010;border-radius:20px;padding:3px 10px;}
 #live-dot{width:7px;height:7px;border-radius:50%;background:#444;transition:background .3s,box-shadow .3s;}
 #live-dot.on{background:#4ade80;box-shadow:0 0 7px #4ade80;}
+#live-dot.warn{background:#f59e0b;box-shadow:0 0 7px #f59e0b;}
 #live-dot.err{background:#f87171;box-shadow:0 0 7px #f87171;}
 #live-txt{font-size:10px;color:#F5E6A380;letter-spacing:1.5px;}
 #chonk-dropdown{position:relative;}
@@ -28,7 +29,7 @@ html,body{width:100%;height:100%;overflow:hidden;background:#C8281E;font-family:
 #app{position:fixed;top:50px;left:0;right:0;bottom:0;display:flex;}
 #left{width:175px;flex-shrink:0;background:#3D0A0A;border-right:2px solid #2a0606;display:flex;flex-direction:column;overflow:hidden;}
 #canvas-wrap{flex:1;position:relative;overflow:hidden;}
-#bg-chart-frame{position:absolute;top:-2%;left:-2%;width:104%;height:104%;border:0;opacity:.28;pointer-events:none;filter:saturate(.75) contrast(.9) brightness(.9);}
+#bg-chart-frame{position:absolute;top:-2%;left:-2%;width:104%;height:104%;border:0;opacity:0;pointer-events:none;filter:saturate(.75) contrast(.9) brightness(.9);transition:opacity .35s ease;}
 canvas{display:block;width:100%;height:100%;position:relative;z-index:2;}
 #right{width:200px;flex-shrink:0;background:#3D0A0A;border-left:2px solid #2a0606;display:flex;flex-direction:column;overflow-y:auto;overflow-x:hidden;}
 #right::-webkit-scrollbar{width:3px;}
@@ -98,6 +99,12 @@ canvas{display:block;width:100%;height:100%;position:relative;z-index:2;}
 #vol-slider{flex:1;-webkit-appearance:none;appearance:none;height:4px;border-radius:2px;background:#2a0606;outline:none;cursor:pointer;}
 #vol-slider::-webkit-slider-thumb{-webkit-appearance:none;width:13px;height:13px;border-radius:50%;background:#F5E6A3;border:2px solid #1a0505;cursor:pointer;}
 #vol-slider::-moz-range-thumb{width:13px;height:13px;border-radius:50%;background:#F5E6A3;border:2px solid #1a0505;cursor:pointer;}
+#chart-opacity-wrap{display:none;align-items:center;gap:8px;margin-top:6px;padding-left:38px;}
+#chart-opacity-wrap.show{display:flex;}
+#chart-opacity-slider{flex:1;-webkit-appearance:none;appearance:none;height:4px;border-radius:2px;background:#2a0606;outline:none;cursor:pointer;}
+#chart-opacity-slider::-webkit-slider-thumb{-webkit-appearance:none;width:13px;height:13px;border-radius:50%;background:#F5E6A3;border:2px solid #1a0505;cursor:pointer;}
+#chart-opacity-slider::-moz-range-thumb{width:13px;height:13px;border-radius:50%;background:#F5E6A3;border:2px solid #1a0505;cursor:pointer;}
+#chart-opacity-value{font-size:9px;color:#F5E6A360;min-width:32px;text-align:right;}
 #ca-row{display:flex;align-items:center;gap:6px;}
 #ca-text{font-size:9px;line-height:1.35;word-break:break-all;color:#F5E6A3;opacity:.92;flex:1;}
 #ca-copy{width:auto;padding:6px 9px;font-size:10px;flex-shrink:0;}
@@ -167,12 +174,20 @@ canvas{display:block;width:100%;height:100%;position:relative;z-index:2;}
           <span class="tog-lbl">FLIP TONE</span>
           <span class="iico" data-tip="Swaps the note scale. Default: top ball = low note, bottom = high. Flip to reverse.">ⓘ</span>
         </div>
+        <div class="tog-row" onclick="doToggle('chart')">
+          <div class="tog-box" id="tog-chart"><div class="tog-knob"></div></div>
+          <span class="tog-lbl">SHOW CHART</span>
+          <span class="iico" data-tip="Shows the Birdeye chart behind the pendulums. Use the slider below to control transparency.">ⓘ</span>
+        </div>
+        <div id="chart-opacity-wrap">
+          <input id="chart-opacity-slider" type="range" min="0" max="100" value="28" oninput="setChartOpacity(this.value)">
+          <span id="chart-opacity-value">28%</span>
+        </div>
       </div>
       <div style="display:flex;flex-direction:column;gap:5px;margin-top:8px;">
         <div class="srow"><button class="cbtn dim" onclick="restartChart()">RESTART</button><span class="iico" data-tip="Stops all balls. Next live trade triggers a fresh start from 10x base speed.">ⓘ</span></div>
-        <div class="srow"><button class="cbtn dim" id="tx20-btn" onclick="handleHistoryClick(20)">LAST 20 TX</button><span class="iico" data-tip="Silently warms up ball speeds from recent trade history. Live feed stays clean.">ⓘ</span></div>
         <div class="srow"><button class="cbtn dim active" id="tx50-btn" onclick="handleHistoryClick(50)">LAST 50 TX</button><span class="iico" data-tip="Default on load. Warms up all balls from the last 50 trades so chart starts alive.">ⓘ</span></div>
-        <div class="srow"><button class="cbtn dim" id="tx100-btn" onclick="handleHistoryClick(100)">LAST 100 TX</button><span class="iico" data-tip="Warms up all balls from recent trade history. Live feed stays clean.">ⓘ</span></div>
+        <div class="srow"><button class="cbtn dim" id="reset-live-btn" onclick="resetToLive()">RESET LIVE</button><span class="iico" data-tip="Clears current state and resumes live mode using the cached last-50 snapshot.">ⓘ</span></div>
       </div>
     </div>
     <div class="pdiv" style="margin-top:10px;"></div>
@@ -240,13 +255,15 @@ const TOKENS = {
 let currentToken = TOKENS.chonky;
 let processedTradeIds = new Set();
 let livePollTimer = null;
-let buttonCooldowns = { 20: 0, 50: 0, 100: 0 };
+let buttonCooldowns = { 50: 0 };
 let buttonCooldownTimer = null;
 let selectedWarmLimit = 50;
 let isFetchingTrades = false;
 let liveErrorBackoffUntil = 0;
 let latestSeenTradeTs = 0;
 let latestSeenTradeId = '';
+const tokenHistoryCache = {};
+let lazyPreloadScheduled = false;
 
 const LIVE_POLL_MS = 20000;      // poll every 20s to reduce rate limits
 const HISTORY_COOLDOWN_MS = 30000;
@@ -267,7 +284,7 @@ function getTierIdx(u) { for (let i = TIERS.length-1; i >= 0; i--) if (u >= TIER
 // ─── VISUAL / AUDIO CONSTANTS ─────────────────────────────────────────────────
 const SLOT_COLORS = ['#4fc3f7','#29b6f6','#4dd0e1','#4db6ac','#81c784','#aed581','#dce775','#fff176','#ffd54f','#ffca28','#ffa726','#ff8c42','#ff6b35','#f4511e','#e53935','#ff1744'];
 const PENTA = [130.8,146.8,164.8,196.0,220.0,261.6,293.7,329.6,392.0,440.0,523.3,587.3,659.3,783.9,880.0,1046.5];
-const vzState = { flipPrice: false, flipTone: false };
+const vzState = { flipPrice: false, flipTone: false, showChart: false };
 const MIN_SPD = 0.1, MAX_SPD = 100.0, BASE_SPD = 10.0;
 let soundMode = 3;
 
@@ -308,8 +325,20 @@ function doToggle(w) {
   } else if (w === 'bg') {
     playInBackground = !playInBackground;
     document.getElementById('tog-bg').classList.toggle('on', playInBackground);
-    // restart polling to pick up new visibility rule
     startLivePolling();
+  } else if (w === 'chart') {
+    vzState.showChart = !vzState.showChart;
+    document.getElementById('tog-chart').classList.toggle('on', vzState.showChart);
+    const wrap = document.getElementById('chart-opacity-wrap');
+    const frame = document.getElementById('bg-chart-frame');
+    if (vzState.showChart) {
+      if (wrap) wrap.classList.add('show');
+      if (!frame.src || frame.src === window.location.href) updateChart(currentToken);
+      setChartOpacity(document.getElementById('chart-opacity-slider').value);
+    } else {
+      if (wrap) wrap.classList.remove('show');
+      frame.style.opacity = '0';
+    }
   }
 }
 
@@ -500,60 +529,64 @@ function normalizeBirdeyeTrade(item) {
 
 // ─── BOOTSTRAP (history warm-up) ─────────────────────────────────────────────
 function setHistoryButtonActive(count) {
-  ['tx20-btn','tx50-btn','tx100-btn'].forEach(id => { const el=document.getElementById(id); if(el)el.classList.remove('active'); });
-  const btn = document.getElementById(count===20?'tx20-btn':count===50?'tx50-btn':'tx100-btn');
+  ['tx50-btn','reset-live-btn'].forEach(id => { const el=document.getElementById(id); if(el)el.classList.remove('active'); });
+  const btn = document.getElementById(count===50 ? 'tx50-btn' : 'reset-live-btn');
   if (btn) btn.classList.add('active');
 }
 
 function updateHistoryButtons() {
-  const map = { 20:'LAST 20 TX', 50:'LAST 50 TX', 100:'LAST 100 TX' };
-  [20,50,100].forEach(count => {
-    const btn = document.getElementById(count===20?'tx20-btn':count===50?'tx50-btn':'tx100-btn');
-    if (!btn) return;
-    const left = Math.max(0, buttonCooldowns[count] - Date.now());
-    if (left > 0) { btn.textContent=`${map[count]} (${Math.ceil(left/1000)}S)`; btn.disabled=true; btn.style.opacity='.75'; }
-    else           { btn.textContent=map[count]; btn.disabled=false; btn.style.opacity='1'; }
-  });
+  const btn = document.getElementById('tx50-btn');
+  if (!btn) return;
+  const left = Math.max(0, (buttonCooldowns[50] || 0) - Date.now());
+  if (left > 0) { btn.textContent=`LAST 50 TX (${Math.ceil(left/1000)}S)`; btn.disabled=true; btn.style.opacity='.75'; }
+  else          { btn.textContent='LAST 50 TX'; btn.disabled=false; btn.style.opacity='1'; }
 }
 function startButtonCooldownTicker() { if(buttonCooldownTimer)clearInterval(buttonCooldownTimer); buttonCooldownTimer=setInterval(updateHistoryButtons,250); updateHistoryButtons(); }
-function startButtonCooldown(count) { buttonCooldowns[count]=Date.now()+HISTORY_COOLDOWN_MS; updateHistoryButtons(); }
+function startButtonCooldown(count) { buttonCooldowns[50]=Date.now()+HISTORY_COOLDOWN_MS; updateHistoryButtons(); }
 
 async function bootstrapFromHistory(limit = 50) {
-  // Birdeye free tier max is 50 per call; clamp
   const clampedLimit = Math.min(limit, 50);
-  selectedWarmLimit = Math.min(limit, 50);
-  setHistoryButtonActive(limit);
-  initTierState(); feedEl.innerHTML = '';
-  document.getElementById('poll-time').textContent = 'LOADING HISTORY...';
+  selectedWarmLimit = 50;
+  setHistoryButtonActive(50);
+  initTierState();
+  feedEl.innerHTML = '';
+  setLive('warn');
+  document.getElementById('poll-time').textContent = 'LOADING LAST 50...';
   try {
-    const trades = await fetchBirdeyeTrades(clampedLimit);
-    for (const trade of trades) {
-      if (trade.side === 'buy') fireBuy(trade.usd, '$' + (trade.usd >= 1 ? Math.round(trade.usd) : trade.usd.toFixed(2)));
-      else fireSell(trade.usd, '$' + (trade.usd >= 1 ? Math.round(trade.usd) : trade.usd.toFixed(2)));
+    let trades = tokenHistoryCache[currentToken.mint];
+    if (!trades || !trades.length) {
+      trades = await fetchBirdeyeTrades(clampedLimit);
+      if (!trades) return;
+      tokenHistoryCache[currentToken.mint] = trades;
     }
-    // snap speeds instantly for history warm-up
+    for (const trade of trades) {
+      const label = '$' + (trade.usd >= 1 ? Math.round(trade.usd) : trade.usd.toFixed(2));
+      if (trade.side === 'buy') fireBuy(trade.usd, label);
+      else fireSell(trade.usd, label);
+    }
     TS.forEach(ts => { ts.speed = ts.targetSpeed; });
-    // seed seen IDs so live poll only fires NEW trades
     processedTradeIds = new Set(trades.map(t => t.id));
     if (trades.length) {
       const newest = trades[trades.length - 1];
       latestSeenTradeTs = newest.ts || 0;
       latestSeenTradeId = newest.id || '';
     }
+    feedEl.innerHTML = '';
     setLive('on');
-    document.getElementById('poll-time').textContent = `BOOTSTRAPPED ${trades.length} TX · ${new Date().toLocaleTimeString()}`;
+    document.getElementById('poll-time').textContent = `LIVE · ${trades.length} READY · ${new Date().toLocaleTimeString()}`;
   } catch(e) {
     setLive('err');
-    document.getElementById('poll-time').textContent = 'BIRDEYE: RETRYING...';
+    document.getElementById('poll-time').textContent = 'PAUSED · WAITING TO CATCH UP';
     console.error('Bootstrap error:', e);
   }
 }
 
 async function handleHistoryClick(limit) {
-  const left = Math.max(0, buttonCooldowns[limit] - Date.now());
+  const left = Math.max(0, (buttonCooldowns[50] || 0) - Date.now());
   if (left > 0) return;
-  startButtonCooldown(limit);
-  await bootstrapFromHistory(limit);
+  startButtonCooldown(50);
+  tokenHistoryCache[currentToken.mint] = null;
+  await bootstrapFromHistory(50);
 }
 
 // ─── LIVE POLLING ─────────────────────────────────────────────────────────────
@@ -562,7 +595,7 @@ async function pollBirdeyeLive() {
 
   if (Date.now() < liveErrorBackoffUntil) {
     setLive('err');
-    pollTimeEl.textContent = 'COOLING DOWN...';
+    pollTimeEl.textContent = 'PAUSED · COOLING DOWN...';
     return;
   }
 
@@ -592,9 +625,18 @@ async function pollBirdeyeLive() {
     pollTimeEl.textContent = `LIVE${fresh.length ? ' +' + fresh.length + ' NEW · ' : ' · '}${new Date().toLocaleTimeString()}`;
   } catch(e) {
     setLive('err');
-    pollTimeEl.textContent = Date.now() < liveErrorBackoffUntil ? 'COOLING DOWN...' : 'BIRDEYE: RECONNECTING...';
+    pollTimeEl.textContent = Date.now() < liveErrorBackoffUntil ? 'PAUSED · COOLING DOWN...' : 'PAUSED · RECONNECTING...';
     console.error('Live poll error:', e);
   }
+}
+
+function resetToLive() {
+  setHistoryButtonActive('live');
+  processedTradeIds = new Set();
+  feedEl.innerHTML = '';
+  latestSeenTradeTs = 0;
+  latestSeenTradeId = '';
+  bootstrapFromHistory(50).then(() => startLivePolling());
 }
 
 function startLivePolling() {
@@ -609,7 +651,15 @@ function startLivePolling() {
 
 // ─── PRICE + DEX STATS ────────────────────────────────────────────────────────
 function fmt(n) { if(n>=1e6)return'$'+(n/1e6).toFixed(2)+'M'; if(n>=1e3)return'$'+(n/1e3).toFixed(1)+'K'; return'$'+n.toFixed(0); }
-function setLive(s) { const d=document.getElementById('live-dot'); d.className=''; if(s==='on')d.classList.add('on'); else if(s==='err')d.classList.add('err'); }
+function setLive(s) {
+  const d=document.getElementById('live-dot');
+  const t=document.getElementById('live-txt');
+  d.className='';
+  if (s === 'on') { d.classList.add('on'); if (t) t.textContent='LIVE'; }
+  else if (s === 'warn') { d.classList.add('warn'); if (t) t.textContent='LOADING'; }
+  else if (s === 'err') { d.classList.add('err'); if (t) t.textContent='PAUSED'; }
+  else { if (t) t.textContent='LIVE'; }
+}
 
 async function pollJupPrice() {
   try {
@@ -647,19 +697,31 @@ function switchToken(key) {
   ['s-price','s-change','s-sol','s-vol','s-liq','s-fdv'].forEach(id => document.getElementById(id).textContent = '–');
   document.getElementById('ca-text').textContent = tok.mint;
   document.getElementById('s-change').className = 'ssub';
-  feedEl.innerHTML = ''; setLive('');
-  updateChart(tok);
-  initJupiter(tok); pollJupPrice(); pollDex();
-  bootstrapFromHistory(selectedWarmLimit);
+  feedEl.innerHTML = '';
+  setLive('warn');
+  if (vzState.showChart) updateChart(tok);
+  initJupiter(tok);
+  pollJupPrice();
+  pollDex();
+  bootstrapFromHistory(50);
   startLivePolling();
 }
 
 // ─── CA + CHART ──────────────────────────────────────────────────────────────
 function updateChart(tok) {
   tok = tok || currentToken;
-  const src = `https://embed.birdeye.so/tv-widget/${tok.mint}?chain=solana&viewMode=pair&chartInterval=15&chartType=Candle&chartTimezone=America%2FNew_York&chartLeftToolbar=hide&theme=dark&cache=${Date.now()}`;
   const frame = document.getElementById('bg-chart-frame');
-  if (frame) frame.src = src;
+  if (!frame) return;
+  const src = `https://embed.birdeye.so/tv-widget/${tok.mint}?chain=solana&viewMode=pair&chartInterval=15&chartType=Candle&chartTimezone=America%2FNew_York&chartLeftToolbar=hide&theme=dark&cache=${Date.now()}`;
+  frame.src = src;
+}
+
+function setChartOpacity(val) {
+  const frame = document.getElementById('bg-chart-frame');
+  const out = document.getElementById('chart-opacity-value');
+  const opacity = Math.max(0, Math.min(Number(val) || 0, 100)) / 100;
+  if (out) out.textContent = `${Math.round(opacity * 100)}%`;
+  if (frame && vzState.showChart) frame.style.opacity = String(opacity);
 }
 
 async function copyCA() {
@@ -670,6 +732,36 @@ async function copyCA() {
     btn.textContent = 'COPIED';
     setTimeout(() => btn.textContent = prev, 1200);
   } catch (e) {}
+}
+
+// ─── LAZY PRELOAD OTHER TOKENS ────────────────────────────────────────────────
+async function startLazyPreloadOtherTokens() {
+  if (lazyPreloadScheduled) return;
+  lazyPreloadScheduled = true;
+
+  const others = Object.values(TOKENS).filter(t => t.mint !== currentToken.mint);
+  for (const tok of others) {
+    if (tokenHistoryCache[tok.mint]?.length) continue;
+
+    while (isFetchingTrades || Date.now() < liveErrorBackoffUntil) {
+      await new Promise(r => setTimeout(r, 1200));
+    }
+
+    try {
+      const res = await fetch(`/api/trades?address=${encodeURIComponent(tok.mint)}&limit=50`, { cache: 'no-store' });
+      if (res.ok) {
+        const json = await res.json();
+        const items = json?.data?.items || json?.data || json?.items || [];
+        const prevToken = currentToken;
+        currentToken = tok;
+        const normalized = items.map(normalizeBirdeyeTrade).filter(Boolean).reverse();
+        currentToken = prevToken;
+        if (normalized.length) tokenHistoryCache[tok.mint] = normalized;
+      }
+    } catch (e) {}
+
+    await new Promise(r => setTimeout(r, 2500));
+  }
 }
 
 // ─── JUPITER WIDGET ───────────────────────────────────────────────────────────
@@ -692,7 +784,7 @@ document.addEventListener('click', e => { if (!document.getElementById('chonk-dr
 // ─── INIT ─────────────────────────────────────────────────────────────────────
 resize(); buildTierPanel(); initTierState(); startButtonCooldownTicker();
 document.getElementById('ca-text').textContent = currentToken.mint;
-updateChart(currentToken);
+setLive('warn');
 requestAnimationFrame(t => { lastTime=t; requestAnimationFrame(loop); });
 window.addEventListener('resize', resize);
 
@@ -705,8 +797,9 @@ document.addEventListener('visibilitychange', () => {
 });
 
 setTimeout(async () => {
-  await bootstrapFromHistory(selectedWarmLimit);
+  await bootstrapFromHistory(50);
   startLivePolling();
+  startLazyPreloadOtherTokens();
   pollJupPrice();
   pollDex();
   setInterval(pollJupPrice, 5000);
