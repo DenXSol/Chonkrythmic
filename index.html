@@ -28,11 +28,18 @@ html,body{width:100%;height:100%;overflow:hidden;background:#C8281E;font-family:
 .cmenu-item:hover{transform:translateY(1px);box-shadow:0 2px 0 #1a0505;}
 #app{position:fixed;top:50px;left:0;right:0;bottom:0;display:flex;}
 #left{width:175px;flex-shrink:0;background:#3D0A0A;border-right:2px solid #2a0606;display:flex;flex-direction:column;overflow:hidden;}
-#canvas-wrap{flex:1;position:relative;overflow:hidden;}
-#bg-chart-frame{position:absolute;top:-2%;left:-2%;width:104%;height:104%;border:0;opacity:.5;pointer-events:none;filter:saturate(.8) contrast(.95) brightness(.92);transition:opacity .35s ease;z-index:1;}
-#canvas-wrap{background:#C8281E;}
-canvas{display:block;width:100%;height:100%;position:relative;z-index:2;background:transparent;}
+#canvas-wrap{flex:1;position:relative;overflow:hidden;background:#C8281E;}
+
+canvas{display:block;width:100%;height:100%;position:relative;background:transparent;}
 #right{width:200px;flex-shrink:0;background:#3D0A0A;border-left:2px solid #2a0606;display:flex;flex-direction:column;overflow-y:auto;overflow-x:hidden;}
+#center{flex:1;display:flex;flex-direction:column;min-width:0;}
+#top-stage{flex:0 0 66%;position:relative;min-height:0;}
+#bottom-panel{flex:1;display:flex;min-height:0;border-top:2px solid #2a0606;background:#2a0606;}
+#chart-panel{flex:1;min-width:0;display:flex;flex-direction:column;background:#1e0505;}
+#chart-head{padding:8px 10px 0;font-size:8px;letter-spacing:2px;color:#F5E6A340;text-transform:uppercase;}
+#chart-frame{flex:1;border:0;width:100%;min-height:0;background:#110202;}
+#bottom-trades{width:240px;flex-shrink:0;border-left:2px solid #2a0606;background:#3D0A0A;display:flex;flex-direction:column;padding:0 10px 10px;}
+
 #right::-webkit-scrollbar{width:3px;}
 #right::-webkit-scrollbar-thumb{background:#5a1010;border-radius:2px;}
 .psec{padding:10px 10px 0;}
@@ -100,12 +107,6 @@ canvas{display:block;width:100%;height:100%;position:relative;z-index:2;backgrou
 #vol-slider{flex:1;-webkit-appearance:none;appearance:none;height:4px;border-radius:2px;background:#2a0606;outline:none;cursor:pointer;}
 #vol-slider::-webkit-slider-thumb{-webkit-appearance:none;width:13px;height:13px;border-radius:50%;background:#F5E6A3;border:2px solid #1a0505;cursor:pointer;}
 #vol-slider::-moz-range-thumb{width:13px;height:13px;border-radius:50%;background:#F5E6A3;border:2px solid #1a0505;cursor:pointer;}
-#chart-opacity-wrap{display:none;align-items:center;gap:8px;margin-top:6px;padding-left:38px;}
-#chart-opacity-wrap.show{display:flex;}
-#chart-opacity-slider{flex:1;-webkit-appearance:none;appearance:none;height:4px;border-radius:2px;background:#2a0606;outline:none;cursor:pointer;}
-#chart-opacity-slider::-webkit-slider-thumb{-webkit-appearance:none;width:13px;height:13px;border-radius:50%;background:#F5E6A3;border:2px solid #1a0505;cursor:pointer;}
-#chart-opacity-slider::-moz-range-thumb{width:13px;height:13px;border-radius:50%;background:#F5E6A3;border:2px solid #1a0505;cursor:pointer;}
-#chart-opacity-value{font-size:9px;color:#F5E6A360;min-width:32px;text-align:right;}
 #ca-row{display:flex;align-items:center;gap:6px;}
 #ca-text{font-size:9px;line-height:1.35;word-break:break-all;color:#F5E6A3;opacity:.92;flex:1;}
 #ca-copy{width:auto;padding:6px 9px;font-size:10px;flex-shrink:0;}
@@ -175,15 +176,6 @@ canvas{display:block;width:100%;height:100%;position:relative;z-index:2;backgrou
           <span class="tog-lbl">FLIP TONE</span>
           <span class="iico" data-tip="Swaps the note scale. Default: top ball = low note, bottom = high. Flip to reverse.">ⓘ</span>
         </div>
-        <div class="tog-row" onclick="doToggle('chart')">
-          <div class="tog-box" id="tog-chart"><div class="tog-knob"></div></div>
-          <span class="tog-lbl">SHOW CHART</span>
-          <span class="iico" data-tip="Shows the Birdeye chart behind the pendulums. Use the slider below to control transparency.">ⓘ</span>
-        </div>
-        <div id="chart-opacity-wrap">
-          <input id="chart-opacity-slider" type="range" min="0" max="50" value="50" oninput="setChartOpacity(this.value)">
-          <span id="chart-opacity-value">50%</span>
-        </div>
       </div>
       <div style="display:flex;flex-direction:column;gap:5px;margin-top:8px;">
         <div class="srow"><button class="cbtn dim" onclick="restartChart()">RESTART</button><span class="iico" data-tip="Stops all balls. Next live trade triggers a fresh start from 10x base speed.">ⓘ</span></div>
@@ -198,7 +190,22 @@ canvas{display:block;width:100%;height:100%;position:relative;z-index:2;backgrou
     </div>
   </div>
 
-  <div id="canvas-wrap"><iframe id="bg-chart-frame" src="" frameborder="0" allowfullscreen></iframe><canvas id="c"></canvas></div>
+  <div id="center">
+    <div id="top-stage">
+      <div id="canvas-wrap"><canvas id="c"></canvas></div>
+    </div>
+    <div id="bottom-panel">
+      <div id="chart-panel">
+        <div id="chart-head">CHART</div>
+        <iframe id="chart-frame" src="" frameborder="0" allowfullscreen></iframe>
+      </div>
+      <div id="bottom-trades">
+        <div class="feed-ttl">LIVE TRADES</div>
+        <div id="feed"></div>
+        <div id="poll-time">CONNECTING...</div>
+      </div>
+    </div>
+  </div>
 
   <div id="right">
     <div id="tok-sel-wrap">
@@ -225,12 +232,6 @@ canvas{display:block;width:100%;height:100%;position:relative;z-index:2;backgrou
       </div>
     </div>
     <div class="pdiv" style="margin-top:10px;"></div>
-
-    <div id="feed-wrap">
-      <div class="feed-ttl">LIVE TRADES</div>
-      <div id="feed"></div>
-      <div id="poll-time">CONNECTING...</div>
-    </div>
   </div>
 </div>
 
@@ -284,7 +285,7 @@ function getTierIdx(u) { for (let i = TIERS.length-1; i >= 0; i--) if (u >= TIER
 // ─── VISUAL / AUDIO CONSTANTS ─────────────────────────────────────────────────
 const SLOT_COLORS = ['#4fc3f7','#29b6f6','#4dd0e1','#4db6ac','#81c784','#aed581','#dce775','#fff176','#ffd54f','#ffca28','#ffa726','#ff8c42','#ff6b35','#f4511e','#e53935','#ff1744'];
 const PENTA = [130.8,146.8,164.8,196.0,220.0,261.6,293.7,329.6,392.0,440.0,523.3,587.3,659.3,783.9,880.0,1046.5];
-const vzState = { flipPrice: false, flipTone: false, showChart: true };
+const vzState = { flipPrice: false, flipTone: false };
 const MIN_SPD = 0.1, MAX_SPD = 100.0, BASE_SPD = 10.0;
 let soundMode = 3;
 
@@ -326,19 +327,6 @@ function doToggle(w) {
     playInBackground = !playInBackground;
     document.getElementById('tog-bg').classList.toggle('on', playInBackground);
     startLivePolling();
-  } else if (w === 'chart') {
-    vzState.showChart = !vzState.showChart;
-    document.getElementById('tog-chart').classList.toggle('on', vzState.showChart);
-    const wrap = document.getElementById('chart-opacity-wrap');
-    const frame = document.getElementById('bg-chart-frame');
-    if (vzState.showChart) {
-      if (wrap) wrap.classList.add('show');
-      if (!frame.src || frame.src === window.location.href) updateChart(currentToken);
-      setChartOpacity(document.getElementById('chart-opacity-slider').value);
-    } else {
-      if (wrap) wrap.classList.remove('show');
-      frame.style.opacity = '0';
-    }
   }
 }
 
@@ -432,7 +420,7 @@ function playNote(slot, side) {
 let lastTime = 0;
 function loop(ts) {
   const dt = Math.min((ts - lastTime) / 1000, .05); lastTime = ts;
-  ctx.fillStyle = 'rgba(200,40,30,0.45)'; ctx.fillRect(0, 0, W, H);
+  ctx.fillStyle = 'rgba(200,40,30,0.90)'; ctx.fillRect(0, 0, W, H);
   const grd = ctx.createRadialGradient(px,py,0,px,py,H*.65);
   grd.addColorStop(0,'rgba(60,0,0,0.35)'); grd.addColorStop(1,'rgba(0,0,0,0)');
   ctx.fillStyle = grd; ctx.fillRect(0, 0, W, H);
@@ -481,15 +469,17 @@ async function fetchBirdeyeTrades(limit = 10) {
       cache: 'no-store',
     });
 
+    const payload = await res.json().catch(() => null);
+
     if (!res.ok) {
       if (res.status === 429) liveErrorBackoffUntil = Date.now() + 20000;
-      throw new Error(`Trades API ${res.status}`);
+      const details = payload?.details ? ` - ${payload.details}` : '';
+      throw new Error(`Trades API ${res.status}${details}`);
     }
 
     liveErrorBackoffUntil = 0;
-    const json = await res.json();
-    const items = json?.data?.items || json?.data || json?.items || [];
-    return items.map(normalizeBirdeyeTrade).filter(Boolean).reverse(); // oldest first
+    const items = payload?.data?.items || payload?.data || payload?.items || [];
+    return items.map(normalizeBirdeyeTrade).filter(Boolean).reverse();
   } finally {
     isFetchingTrades = false;
   }
@@ -662,17 +652,7 @@ function setLive(s) {
 }
 
 async function pollJupPrice() {
-  try {
-    const res = await fetch(`https://api.jup.ag/price/v3?ids=${currentToken.mint},${SOL_MINT}`);
-    if (!res.ok) return; const data = await res.json();
-    const coin = data[currentToken.mint], sol = data[SOL_MINT];
-    if (coin) {
-      const p=coin.usdPrice||0, chg=coin.priceChange24h||0;
-      document.getElementById('s-price').textContent = '$'+p.toFixed(7);
-      const ce=document.getElementById('s-change'); ce.textContent=(chg>=0?'+':'')+chg.toFixed(2)+'% 24H'; ce.className='ssub '+(chg>=0?'green':'red');
-      if (sol?.usdPrice>0) document.getElementById('s-sol').textContent=(p/sol.usdPrice).toFixed(9)+' SOL';
-    }
-  } catch(e) {}
+  return;
 }
 
 async function pollDex() {
@@ -699,9 +679,7 @@ function switchToken(key) {
   document.getElementById('s-change').className = 'ssub';
   feedEl.innerHTML = '';
   setLive('warn');
-  if (vzState.showChart) updateChart(tok);
-  initJupiter(tok);
-  pollJupPrice();
+  updateChart(tok);
   pollDex();
   bootstrapFromHistory(50);
   startLivePolling();
@@ -710,18 +688,10 @@ function switchToken(key) {
 // ─── CA + CHART ──────────────────────────────────────────────────────────────
 function updateChart(tok) {
   tok = tok || currentToken;
-  const frame = document.getElementById('bg-chart-frame');
+  const frame = document.getElementById('chart-frame');
   if (!frame) return;
-  const src = `https://embed.birdeye.so/tv-widget/${tok.mint}?chain=solana&viewMode=pair&chartInterval=15&chartType=Candle&chartTimezone=America%2FNew_York&chartLeftToolbar=hide&theme=dark&cache=${Date.now()}`;
+  const src = `https://embed.birdeye.so/tv-widget/${tok.mint}?chain=solana&viewMode=pair&chartInterval=15&chartType=Candle&chartTimezone=America%2FNew_York&chartLeftToolbar=show&theme=dark&cache=${Date.now()}`;
   frame.src = src;
-}
-
-function setChartOpacity(val) {
-  const frame = document.getElementById('bg-chart-frame');
-  const out = document.getElementById('chart-opacity-value');
-  const opacity = Math.max(0, Math.min(Number(val) || 0, 50)) / 100;
-  if (out) out.textContent = `${Math.round(opacity * 100)}%`;
-  if (frame && vzState.showChart) frame.style.opacity = String(opacity);
 }
 
 async function copyCA() {
@@ -736,15 +706,7 @@ async function copyCA() {
 
 // ─── JUPITER WIDGET ───────────────────────────────────────────────────────────
 function initJupiter(tok) {
-  tok = tok || currentToken;
-  try {
-    if (!window.Jupiter) return setTimeout(() => initJupiter(tok), 500);
-    window.Jupiter.init({
-      displayMode: 'widget',
-      widgetStyle: { position: 'bottom-right', size: 'default' },
-      formProps: { initialInputMint: SOL_MINT, initialOutputMint: tok.mint, fixedOutputMint: true },
-    });
-  } catch(e) { setTimeout(() => initJupiter(tok), 500); }
+  return;
 }
 
 // ─── DROPDOWN ─────────────────────────────────────────────────────────────────
@@ -755,10 +717,7 @@ document.addEventListener('click', e => { if (!document.getElementById('chonk-dr
 resize(); buildTierPanel(); initTierState(); startButtonCooldownTicker();
 document.getElementById('ca-text').textContent = currentToken.mint;
 setLive('warn');
-document.getElementById('tog-chart').classList.add('on');
-document.getElementById('chart-opacity-wrap').classList.add('show');
 updateChart(currentToken);
-setChartOpacity(50);
 requestAnimationFrame(t => { lastTime=t; requestAnimationFrame(loop); });
 window.addEventListener('resize', resize);
 
@@ -773,12 +732,9 @@ document.addEventListener('visibilitychange', () => {
 setTimeout(async () => {
   await bootstrapFromHistory(50);
   startLivePolling();
-  pollJupPrice();
   pollDex();
-  setInterval(pollJupPrice, 5000);
   setInterval(pollDex, 15000);
 }, 800);
-setTimeout(initJupiter, 1500);
 </script>
 </body>
 </html>
